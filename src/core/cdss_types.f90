@@ -18,9 +18,10 @@ module cdss_types
 
   !> Persistent receiver synchronization and tracking state.
   type :: tracking_state
-    real(dp) :: phase_est = 0.0_dp   !< Current carrier phase estimate in radians.
-    real(dp) :: freq_est  = 0.0_dp   !< Current carrier frequency estimate in radians per bit.
-    real(dp) :: timing_error = 0.0_dp !< Accumulated timing error in samples.
+    real(dp) :: phase_est = 0.0_dp      !< Current carrier phase estimate in radians.
+    real(dp) :: freq_est  = 0.0_dp      !< Current carrier frequency estimate in radians per bit.
+    real(dp) :: timing_error = 0.0_dp   !< Accumulated timing error in samples.
+    real(dp) :: timing_freq_est = 0.0_dp !< Timing frequency estimate (samples per bit).
   end type tracking_state
 
   !> Physical-layer waveform geometry.

@@ -74,7 +74,8 @@ contains
     ! Costas-loop and Timing-loop state variables.
     complex(dp) :: chip_corr_cplx, bit_sum_cplx
     real(dp) :: phase_est, freq_est, phase_err, alpha, beta
-    real(dp) :: timing_error, early_gate, late_gate, timing_mu
+    real(dp) :: timing_error, timing_freq_est, early_gate, late_gate
+    real(dp) :: timing_alpha, timing_beta, timing_err_disc, timing_frac
     integer  :: timing_step
 
     samples_per_chip = cfg%samples_per_chip()
@@ -122,19 +123,23 @@ contains
     phase_est = 0.0_dp
     freq_est  = 0.0_dp
     timing_error = 0.0_dp
+    timing_freq_est = 0.0_dp
     if (present(state)) then
       phase_est = state%phase_est
       freq_est  = state%freq_est
       timing_error = state%timing_error
+      timing_freq_est = state%timing_freq_est
     end if
 
-    alpha = 0.05_dp      ! Proportional phase gain
-    beta  = 0.001_dp     ! Integral frequency gain
-    timing_mu = 0.02_dp  ! Timing error gain
+    alpha = 0.05_dp       ! Proportional phase gain
+    beta  = 0.001_dp      ! Integral frequency gain
+    timing_alpha = 0.02_dp ! Proportional timing gain
+    timing_beta  = 0.0002_dp ! Integral timing gain (tracks clock drift/PPM)
 
     do b_idx = 1, n_bits
-      ! base index adjusted by integer-rounded timing error.
-      timing_step = nint(timing_error)
+      ! base index and fractional offset.
+      timing_step = floor(timing_error)
+      timing_frac = timing_error - real(timing_step, dp)
       base = (b_idx - 1) * samples_per_bit + timing_step
       
       bit_sum_cplx = (0.0_dp, 0.0_dp)
@@ -145,18 +150,25 @@ contains
         abs_chip = (b_idx - 1) * cfg%spreading_factor + c_idx
         chip_corr_cplx = (0.0_dp, 0.0_dp)
         do k = 1, samples_per_chip
-          if (base + (c_idx - 1) * samples_per_chip + k >= 1 .and. &
-              base + (c_idx - 1) * samples_per_chip + k <= size(rx)) then
+          block
+            integer :: idx
+            complex(dp) :: s
+            idx = base + (c_idx - 1) * samples_per_chip + k
+            s = (0.0_dp, 0.0_dp)
+            if (idx >= 1 .and. idx < size(rx)) then
+              ! Linear interpolation recovers signal energy between samples.
+              s = rx(idx) * (1.0_dp - timing_frac) + rx(idx + 1) * timing_frac
+            else if (idx == size(rx)) then
+              s = rx(idx)
+            end if
             chip_corr_cplx = chip_corr_cplx + envelope(k) * &
-                 ( rx(base + (c_idx - 1) * samples_per_chip + k) * &
-                   conjg(carrier((c_idx - 1) * samples_per_chip + k)) )
-          end if
+                 ( s * conjg(carrier((c_idx - 1) * samples_per_chip + k)) )
+          end block
         end do
         chip_corr_cplx = chip_corr_cplx / env_norm
         bit_sum_cplx = bit_sum_cplx + chip_w(abs_chip) * pn_signs(c_idx) * chip_corr_cplx
 
         ! Early-Late Gate timing error detector (TED).
-        ! Measures magnitude of correlation one sample before and after.
         block
           complex(dp) :: c_early, c_late
           integer :: idx
@@ -164,13 +176,15 @@ contains
           c_late  = (0.0_dp, 0.0_dp)
           do k = 1, samples_per_chip
             idx = base + (c_idx - 1) * samples_per_chip + k
-            if (idx - 1 >= 1 .and. idx - 1 <= size(rx)) then
-              c_early = c_early + envelope(k) * &
-                   ( rx(idx - 1) * conjg(carrier((c_idx - 1) * samples_per_chip + k)) )
+            ! Early gate: correlation 0.5 samples before center.
+            if (idx - 1 >= 1 .and. idx < size(rx)) then
+              c_early = c_early + envelope(k) * conjg(carrier((c_idx - 1) * samples_per_chip + k)) * &
+                   (rx(idx - 1) * (0.5_dp + timing_frac) + rx(idx) * (0.5_dp - timing_frac))
             end if
-            if (idx + 1 >= 1 .and. idx + 1 <= size(rx)) then
-              c_late = c_late + envelope(k) * &
-                   ( rx(idx + 1) * conjg(carrier((c_idx - 1) * samples_per_chip + k)) )
+            ! Late gate: correlation 0.5 samples after center.
+            if (idx >= 1 .and. idx + 1 < size(rx)) then
+              c_late = c_late + envelope(k) * conjg(carrier((c_idx - 1) * samples_per_chip + k)) * &
+                   (rx(idx) * (0.5_dp - timing_frac) + rx(idx + 1) * (0.5_dp + timing_frac))
             end if
           end do
           early_gate = early_gate + chip_w(abs_chip) * abs(c_early)
@@ -178,8 +192,10 @@ contains
         end block
       end do
 
-      ! Update timing error estimate based on Early-Late difference.
-      timing_error = timing_error + timing_mu * (late_gate - early_gate) / max(abs(bit_sum_cplx), eps)
+      ! Update second-order timing loop.
+      timing_err_disc = (late_gate - early_gate) / max(abs(bit_sum_cplx), eps)
+      timing_freq_est = timing_freq_est + timing_beta  * timing_err_disc
+      timing_error    = timing_error    + timing_alpha * timing_err_disc + timing_freq_est
 
       ! Derotate and update Costas loop.
       bit_sum_cplx = bit_sum_cplx * exp(cmplx(0.0_dp, -phase_est, dp))
@@ -201,6 +217,7 @@ contains
       state%phase_est = phase_est
       state%freq_est  = freq_est
       state%timing_error = timing_error
+      state%timing_freq_est = timing_freq_est
     end if
 
     result%temperature_used = metric%temperature
