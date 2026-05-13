@@ -141,13 +141,16 @@ contains
   !!                              to be the start of the transmitted frame.
   !! @param[in]  max_payload_hint Caller-provided payload length guard in bits.
   !! @param[out] result           Decoded payload, CRC status, and diagnostics.
-  subroutine recover_frame(cfg, metric, coding, rx, max_payload_hint, result)
+  !! @param[in]  acq_peak         Optional complex correlation peak from preamble sync.
+  subroutine recover_frame(cfg, metric, coding, rx, max_payload_hint, result, acq_peak)
+    use cdss_types, only: tracking_state
     type(waveform_config),    intent(in)  :: cfg
     type(soft_metric_config), intent(in)  :: metric
     type(coding_config),      intent(in)  :: coding
     complex(dp),              intent(in)  :: rx(:)
     integer,                  intent(in)  :: max_payload_hint
     type(frame_recovery_result), intent(out) :: result
+    complex(dp), intent(in), optional     :: acq_peak
 
     type(polar_code) :: hcode, pcode
     type(soft_demod_result) :: header_demod, payload_demod, refined
@@ -157,6 +160,7 @@ contains
     integer :: payload_length, crc_expected, observed_crc
     integer :: total_samples_needed, iter, max_iter
     integer :: header_offset
+    type(tracking_state) :: state
 
     hcode%n = coding%header_n
     hcode%k = coding%header_k
@@ -164,6 +168,16 @@ contains
     pcode%n = coding%payload_n
     pcode%k = coding%payload_k
     pcode%list_size = coding%list_size
+
+    ! Initialize tracking state. If acq_peak is provided, use its phase.
+    state%phase_est = 0.0_dp
+    state%freq_est  = 0.0_dp
+    state%timing_error = 0.0_dp
+    if (present(acq_peak)) then
+      if (abs(acq_peak) > eps) then
+        state%phase_est = atan2(aimag(acq_peak), real(acq_peak, dp))
+      end if
+    end if
 
     header_offset = cfg%preamble_bits
 
@@ -173,8 +187,10 @@ contains
       return
     end if
 
+    ! Demodulate header using persistent state.
     call soft_demod_bits(cfg, metric, &
-         rx(header_offset * cfg%samples_per_bit() + 1:), header_n_bits, header_demod)
+         rx(header_offset * cfg%samples_per_bit() + 1:), header_n_bits, header_demod, state=state)
+    
     allocate(header_llrs_polar(header_n_bits))
     header_llrs_polar = header_demod%bit_llrs
     call polar_decode_stream(hcode, header_llrs_polar, header_info)
@@ -193,9 +209,11 @@ contains
       return
     end if
 
+    ! Demodulate payload using state carried over from header.
     call soft_demod_bits(cfg, metric, &
          rx((header_offset + header_n_bits) * cfg%samples_per_bit() + 1:), &
-         payload_n_bits, payload_demod)
+         payload_n_bits, payload_demod, state=state)
+    
     allocate(payload_llrs_polar(payload_n_bits))
     payload_llrs_polar = payload_demod%bit_llrs
     call polar_decode_stream(pcode, payload_llrs_polar, payload_bits)
@@ -209,8 +227,12 @@ contains
     max_iter = max(0, metric%refinement_iters)
     iter = 0
     do while (iter < max_iter .and. observed_crc /= crc_expected)
-      call refine_loop_once(cfg, metric, coding, rx, header_offset, header_n_bits, &
-           payload_bits, payload_n_bits, refined)
+      block
+        type(tracking_state) :: state_refine
+        state_refine = state 
+        call refine_loop_once(cfg, metric, coding, rx, header_offset, header_n_bits, &
+             payload_bits, payload_n_bits, refined, state_refine)
+      end block
       payload_demod = refined
       payload_llrs_polar = payload_demod%bit_llrs
       call polar_decode_stream(pcode, payload_llrs_polar, payload_bits)
@@ -350,8 +372,10 @@ contains
   !! @param[in]  payload_bits    Current decoded payload estimate.
   !! @param[in]  payload_n_bits  Coded payload length in bits.
   !! @param[out] refined         Updated soft-demodulation result.
+  !! @param[inout] state         Optional tracking state.
   subroutine refine_loop_once(cfg, metric, coding, rx, header_offset, header_n_bits, &
-                                payload_bits, payload_n_bits, refined)
+                                payload_bits, payload_n_bits, refined, state)
+    use cdss_types, only: tracking_state
     type(waveform_config),    intent(in) :: cfg
     type(soft_metric_config), intent(in) :: metric
     type(coding_config),      intent(in) :: coding
@@ -359,6 +383,7 @@ contains
     integer, intent(in) :: header_offset, header_n_bits, payload_n_bits
     integer, intent(in) :: payload_bits(:)
     type(soft_demod_result), intent(out) :: refined
+    type(tracking_state), intent(inout), optional :: state
     integer, allocatable :: payload_recoded(:)
     type(polar_code) :: pcode
     pcode%n = coding%payload_n
@@ -370,7 +395,7 @@ contains
     end if
     call refine_soft_demod(cfg, metric, &
          rx((header_offset + header_n_bits) * cfg%samples_per_bit() + 1:), &
-         payload_n_bits, payload_recoded, refined)
+         payload_n_bits, payload_recoded, refined, state=state)
     deallocate(payload_recoded)
   end subroutine refine_loop_once
 

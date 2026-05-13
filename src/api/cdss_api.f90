@@ -55,12 +55,14 @@ contains
   !!                              assumes the frame is already sample-aligned.
   !! @param[in]  max_payload_hint Safety bound for decoded payload length in bits.
   !! @param[out] result           Decoding result, including CRC status and metrics.
-  subroutine modem_recover(self, rx, max_payload_hint, result)
+  !! @param[in]  acq_peak         Optional complex correlation peak from preamble sync.
+  subroutine modem_recover(self, rx, max_payload_hint, result, acq_peak)
     class(cdss_modem), intent(in) :: self
     complex(dp), intent(in) :: rx(:)
     integer, intent(in) :: max_payload_hint
     type(frame_recovery_result), intent(out) :: result
-    call recover_frame(self%waveform, self%metric, self%coding, rx, max_payload_hint, result)
+    complex(dp), intent(in), optional :: acq_peak
+    call recover_frame(self%waveform, self%metric, self%coding, rx, max_payload_hint, result, acq_peak)
   end subroutine modem_recover
 
   !> Estimate the number of IQ samples occupied by a frame.

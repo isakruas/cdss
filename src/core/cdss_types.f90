@@ -14,7 +14,14 @@ module cdss_types
   private
   public :: waveform_config, channel_config, soft_metric_config, coding_config
   public :: tone_interferer
-  public :: soft_demod_result, frame_recovery_result
+  public :: soft_demod_result, frame_recovery_result, tracking_state
+
+  !> Persistent receiver synchronization and tracking state.
+  type :: tracking_state
+    real(dp) :: phase_est = 0.0_dp   !< Current carrier phase estimate in radians.
+    real(dp) :: freq_est  = 0.0_dp   !< Current carrier frequency estimate in radians per bit.
+    real(dp) :: timing_error = 0.0_dp !< Accumulated timing error in samples.
+  end type tracking_state
 
   !> Physical-layer waveform geometry.
   !!

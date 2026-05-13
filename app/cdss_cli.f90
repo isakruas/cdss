@@ -281,15 +281,15 @@ contains
       if (detected_sample >= 0 .and. size(rx) >= detected_sample + frame_samples) then
         allocate(rx_aligned(frame_samples))
         rx_aligned = rx(detected_sample + 1:detected_sample + frame_samples) * phase_rot
-        call modem%recover_frame(rx_aligned, nbits + 64, frame)
+        call modem%recover_frame(rx_aligned, nbits + 64, frame, acq_peak=acquisition_peak * phase_rot)
         deallocate(rx_aligned)
       else if (detected_sample >= 0 .and. size(rx) > detected_sample) then
         allocate(rx_aligned(size(rx) - detected_sample))
         rx_aligned = rx(detected_sample + 1:) * phase_rot
-        call modem%recover_frame(rx_aligned, nbits + 64, frame)
+        call modem%recover_frame(rx_aligned, nbits + 64, frame, acq_peak=acquisition_peak * phase_rot)
         deallocate(rx_aligned)
       else
-        call modem%recover_frame(rx, nbits + 64, frame)
+        call modem%recover_frame(rx, nbits + 64, frame, acq_peak=acquisition_peak)
       end if
     else if (known_prefix_samples > 0 .and. known_prefix_samples < size(rx)) then
       allocate(rx_aligned(size(rx) - known_prefix_samples))

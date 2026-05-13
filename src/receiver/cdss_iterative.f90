@@ -28,13 +28,16 @@ contains
   !! @param[in]  decoded_coded_bits Current best coded-bit estimate.
   !! @param[out] refined            Soft-demodulation result using refreshed
   !!                                chip exposure metrics.
-  subroutine refine_soft_demod(cfg, metric, rx, n_bits, decoded_coded_bits, refined)
+  !! @param[inout] state            Optional tracking state.
+  subroutine refine_soft_demod(cfg, metric, rx, n_bits, decoded_coded_bits, refined, state)
+    use cdss_types, only: tracking_state
     type(waveform_config),    intent(in)  :: cfg
     type(soft_metric_config), intent(in)  :: metric
     complex(dp),              intent(in)  :: rx(:)
     integer,                  intent(in)  :: n_bits
     integer,                  intent(in)  :: decoded_coded_bits(:)   ! current best estimate
     type(soft_demod_result),  intent(out) :: refined
+    type(tracking_state), intent(inout), optional :: state
 
     complex(dp), allocatable :: tx_estimate(:), residue(:)
     integer :: total_samples, i
@@ -67,7 +70,7 @@ contains
       residue_power = sum(abs(residue)**2) / real(total_samples, dp)
       metric_iter%has_noise_var = .true.
       metric_iter%noise_var = max(residue_power, eps)
-      call soft_demod_bits(cfg, metric_iter, rx, n_bits, refined, residue)
+      call soft_demod_bits(cfg, metric_iter, rx, n_bits, refined, state=state, bg_residue=residue)
     end block
 
     deallocate(tx_estimate, residue)
