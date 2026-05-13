@@ -1,0 +1,2 @@
+# Plotting dependency for research/scripts/plot_mc.py.
+matplotlib>=3.8

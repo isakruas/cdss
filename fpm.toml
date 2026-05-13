@@ -1,0 +1,30 @@
+name = "cdss"
+version = "0.1.0"
+license = "GPL-3.0-or-later"
+author = "Isak Paulo de Andrade Ruas"
+maintainer = "isakruas@gmail.com"
+description = "CHIRP-DSSS-Polar digital modem with soft-decision reception and iterative refinement"
+
+[build]
+auto-executables = true
+auto-tests = true
+auto-examples = false
+link = ["fftw3"]
+
+[install]
+library = false
+
+[fortran]
+implicit-typing = false
+implicit-external = false
+source-form = "free"
+
+[[executable]]
+name = "cdss"
+source-dir = "app"
+main = "cdss_cli.f90"
+
+[library]
+source-dir = "src"
+
+[dev-dependencies]
