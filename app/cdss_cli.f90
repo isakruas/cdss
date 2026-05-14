@@ -15,6 +15,7 @@ program cdss_cli
   use cdss_channel, only: simulate_full_channel
   use cdss_rng,   only: rng_state, rng_seed, rng_bits
   use cdss_bits,  only: bits_to_string, bits_from_string
+  use cdss_constants, only: two_pi
   implicit none
 
   character(len=32) :: command
@@ -60,7 +61,7 @@ contains
     complex(dp), allocatable :: iq(:), synced(:)
     character(len=512) :: input, output, fmt
     integer :: acq_idx, nbits, total_samples
-    real(dp) :: acq_score
+    real(dp) :: acq_score, cfo_est_hz
     complex(dp) :: acq_peak, phase_rot
     input  = "frame.cf32"
     output = "sync.cf32"
@@ -73,7 +74,7 @@ contains
     fmt = infer_format(trim(input), "auto")
     call load_waveform(trim(input), trim(fmt), modem%waveform, iq)
     
-    call sync_preamble(modem%waveform, iq, acq_idx, acq_score, acq_peak)
+    call sync_preamble(modem%waveform, iq, acq_idx, acq_score, acq_peak, cfo_est_hz)
     
     if (abs(acq_peak) > eps) then
       phase_rot = conjg(acq_peak / abs(acq_peak))
@@ -85,14 +86,14 @@ contains
     total_samples = frame_n_samples(modem%waveform, modem%coding, nbits)
     
     if (size(iq) >= acq_idx + total_samples) then
-      allocate(synced(total_samples))
-      synced = iq(acq_idx + 1 : acq_idx + total_samples) * phase_rot
+      call copy_corrected_segment(iq, acq_idx, total_samples, modem%waveform%sample_rate, &
+           cfo_est_hz, phase_rot, synced)
       fmt = infer_format(trim(output), "auto")
       call save_waveform(trim(output), trim(fmt), modem%waveform, synced)
     else if (size(iq) > acq_idx) then
       ! If the capture is truncated, save the available suffix for diagnostics.
-      allocate(synced(size(iq) - acq_idx))
-      synced = iq(acq_idx + 1 :) * phase_rot
+      call copy_corrected_segment(iq, acq_idx, size(iq) - acq_idx, modem%waveform%sample_rate, &
+           cfo_est_hz, phase_rot, synced)
       fmt = infer_format(trim(output), "auto")
       call save_waveform(trim(output), trim(fmt), modem%waveform, synced)
     end if
@@ -103,6 +104,7 @@ contains
       call json_begin(jbuf, jpos)
       call json_int(jbuf, jpos, "detected_sample", acq_idx)
       call json_real(jbuf, jpos, "acquisition_score", acq_score)
+      call json_real(jbuf, jpos, "cfo_est_hz", cfo_est_hz)
       call json_int(jbuf, jpos, "frame_samples", total_samples)
       call json_str(jbuf, jpos, "output", trim(output))
       call json_end(jbuf, jpos)
@@ -203,7 +205,7 @@ contains
     integer :: nbits, seed, errors, i, frame_samples
     real(dp) :: noise_var, tone_frequency_hz, tone_sir_db, tone_phase_rad
     real(dp) :: tone_start_s, tone_duration_s, clock_scale
-    real(dp) :: acquisition_score
+    real(dp) :: acquisition_score, cfo_est_hz
     logical :: has_tone, found, has_tone_duration, sync_search, sync_ok
     integer :: known_prefix_samples, expected_sample, detected_sample, timing_error
     complex(dp) :: acquisition_peak, phase_rot
@@ -266,11 +268,12 @@ contains
     detected_sample = expected_sample
     timing_error = 0
     acquisition_score = 0.0_dp
+    cfo_est_hz = 0.0_dp
     sync_ok = .true.
     frame_samples = modem%estimate_frame_samples(nbits)
 
     if (sync_search) then
-      call sync_preamble(modem%waveform, rx, detected_sample, acquisition_score, acquisition_peak)
+      call sync_preamble(modem%waveform, rx, detected_sample, acquisition_score, acquisition_peak, cfo_est_hz)
       timing_error = detected_sample - expected_sample
       sync_ok = abs(timing_error) <= 4
       if (abs(acquisition_peak) > eps) then
@@ -278,18 +281,34 @@ contains
       else
         phase_rot = (1.0_dp, 0.0_dp)
       end if
-      if (detected_sample >= 0 .and. size(rx) >= detected_sample + frame_samples) then
-        allocate(rx_aligned(frame_samples))
-        rx_aligned = rx(detected_sample + 1:detected_sample + frame_samples) * phase_rot
-        call modem%recover_frame(rx_aligned, nbits + 64, frame, acq_peak=acquisition_peak * phase_rot)
-        deallocate(rx_aligned)
-      else if (detected_sample >= 0 .and. size(rx) > detected_sample) then
-        allocate(rx_aligned(size(rx) - detected_sample))
-        rx_aligned = rx(detected_sample + 1:) * phase_rot
+      if (detected_sample >= 0) then
+        call copy_corrected_segment(rx, detected_sample, frame_samples, modem%waveform%sample_rate, &
+             cfo_est_hz, phase_rot, rx_aligned)
         call modem%recover_frame(rx_aligned, nbits + 64, frame, acq_peak=acquisition_peak * phase_rot)
         deallocate(rx_aligned)
       else
         call modem%recover_frame(rx, nbits + 64, frame, acq_peak=acquisition_peak)
+      end if
+    else if (abs(ch%cfo_hz) > eps .or. abs(ch%drift_hz_s) > eps .or. abs(ch%clock_ppm) > eps) then
+      call sync_preamble(modem%waveform, rx, detected_sample, acquisition_score, acquisition_peak, cfo_est_hz)
+      timing_error = detected_sample - expected_sample
+      if (abs(acquisition_peak) > eps) then
+        phase_rot = conjg(acquisition_peak / abs(acquisition_peak))
+      else
+        phase_rot = (1.0_dp, 0.0_dp)
+      end if
+      if (detected_sample >= 0) then
+        call copy_corrected_segment(rx, detected_sample, frame_samples, modem%waveform%sample_rate, &
+             cfo_est_hz, phase_rot, rx_aligned)
+        call modem%recover_frame(rx_aligned, nbits + 64, frame, acq_peak=acquisition_peak * phase_rot)
+        deallocate(rx_aligned)
+      else if (known_prefix_samples > 0 .and. known_prefix_samples < size(rx)) then
+        allocate(rx_aligned(size(rx) - known_prefix_samples))
+        rx_aligned = rx(known_prefix_samples + 1:)
+        call modem%recover_frame(rx_aligned, nbits + 64, frame)
+        deallocate(rx_aligned)
+      else
+        call modem%recover_frame(rx, nbits + 64, frame)
       end if
     else if (known_prefix_samples > 0 .and. known_prefix_samples < size(rx)) then
       allocate(rx_aligned(size(rx) - known_prefix_samples))
@@ -326,6 +345,7 @@ contains
       call json_int (jbuf, jpos, "detected_sample", detected_sample)
       call json_int (jbuf, jpos, "timing_error_samples", timing_error)
       call json_real(jbuf, jpos, "acquisition_score", acquisition_score)
+      call json_real(jbuf, jpos, "cfo_est_hz", cfo_est_hz)
       call json_int (jbuf, jpos, "tone_count", size(tones))
       if (has_tone) then
         call json_real(jbuf, jpos, "tone_frequency_hz", tones(1)%frequency_hz)
@@ -341,6 +361,30 @@ contains
       print '(a)', jbuf(:jpos)
     end block
   end subroutine cmd_simulate
+
+  !> Copy an aligned slice while removing the CFO estimated during acquisition.
+  subroutine copy_corrected_segment(input, start_idx, requested, sample_rate, cfo_hz, phase_rot, output)
+    complex(dp), intent(in) :: input(:)
+    integer, intent(in) :: start_idx, requested
+    real(dp), intent(in) :: sample_rate, cfo_hz
+    complex(dp), intent(in) :: phase_rot
+    complex(dp), allocatable, intent(out) :: output(:)
+    integer :: i, n
+    real(dp) :: t, phase
+    complex(dp) :: rot
+
+    n = max(0, requested)
+    allocate(output(n))
+    output = (0.0_dp, 0.0_dp)
+    do i = 1, n
+      if (start_idx + i >= 1 .and. start_idx + i <= size(input)) then
+        t = real(start_idx + i - 1, dp) / sample_rate
+        phase = -two_pi * cfo_hz * t
+        rot = cmplx(cos(phase), sin(phase), dp)
+        output(i) = input(start_idx + i) * rot * phase_rot
+      end if
+    end do
+  end subroutine copy_corrected_segment
 
   !> Print a frame-recovery result as a compact JSON object.
   !!

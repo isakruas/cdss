@@ -131,8 +131,8 @@ contains
       timing_freq_est = state%timing_freq_est
     end if
 
-    alpha = 0.05_dp       ! Proportional phase gain
-    beta  = 0.001_dp      ! Integral frequency gain
+    alpha = 0.20_dp       ! Proportional phase gain
+    beta  = 0.02_dp       ! Integral frequency gain
     timing_alpha = 0.02_dp ! Proportional timing gain
     timing_beta  = 0.0002_dp ! Integral timing gain (tracks clock drift/PPM)
 

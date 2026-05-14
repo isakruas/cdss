@@ -64,7 +64,19 @@ program test_cli_integration
   call require_contains(text, '"sync_search":true', "simulate sync_search")
   call require_contains(text, '"sync_ok":true', "simulate sync_ok")
   call require_contains(text, '"prefix_pad_s":1.00000000E-02', "simulate prefix_pad_s")
+  call require_contains(text, '"cfo_est_hz"', "simulate cfo_est_hz")
   print '(a,a)', "  simulate output=", trim(text)
+
+  call run_cli("simulate --bits 16 --snr-db 45 --seed 8 --cfo-hz 5.0 " // &
+       "--drift-hz-s 0.010 --clock-ppm 1.0 --prefix-pad-s 0.050 " // &
+       "--suffix-pad-s 0.020 --sync-search > " // simulate_path, stat)
+  if (stat /= 0) error stop 13
+  call read_text(simulate_path, text)
+  call require_contains(text, '"crc_ok":true', "commercial simulate crc_ok")
+  call require_contains(text, '"bit_errors":0', "commercial simulate bit_errors")
+  call require_contains(text, '"sync_ok":true', "commercial simulate sync_ok")
+  call require_contains(text, '"cfo_est_hz"', "commercial simulate cfo_est_hz")
+  print '(a,a)', "  commercial simulate output=", trim(text)
 
   call run_cli("unknown > " // bad_path // " 2>&1", stat)
   print '(a,i0)', "  unknown command exit status=", stat

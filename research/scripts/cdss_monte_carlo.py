@@ -34,44 +34,74 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_OUT_ROOT = REPO_ROOT / "research" / "mc_results"
 
 PROFILE_OPTIONS: dict[str, list[str]] = {
-    "aligned_awgn": [],
+    "aligned_awgn": [
+        "--sync-search",
+        "--prefix-pad-s",
+        "0.0",
+        "--suffix-pad-s",
+        "0.0",
+        "--clock-ppm",
+        "1.0",
+        "--cfo-hz",
+        "0.5",
+        "--drift-hz-s",
+        "0.001",
+    ],
     "sync_awgn": [
         "--sync-search",
         "--prefix-pad-s",
-        "0.020",
+        "0.050",
         "--suffix-pad-s",
-        "0.010",
+        "0.020",
+        "--clock-ppm",
+        "1.0",
+        "--cfo-hz",
+        "0.5",
+        "--drift-hz-s",
+        "0.001",
     ],
     "cfo_drift": [
         "--sync-search",
         "--prefix-pad-s",
-        "0.020",
+        "0.050",
         "--suffix-pad-s",
-        "0.010",
-        "--cfo-hz",
         "0.020",
+        "--clock-ppm",
+        "1.0",
+        "--cfo-hz",
+        "5.0",
         "--drift-hz-s",
-        "0.001",
+        "0.010",
     ],
     "tone": [
         "--sync-search",
         "--prefix-pad-s",
-        "0.020",
+        "0.050",
         "--suffix-pad-s",
-        "0.010",
+        "0.020",
+        "--clock-ppm",
+        "1.0",
+        "--cfo-hz",
+        "0.5",
+        "--drift-hz-s",
+        "0.001",
         "--tone-frequency-hz",
         "1525.0",
         "--tone-sir-db",
-        "25.0",
+        "12.0",
     ],
     "clock": [
         "--sync-search",
         "--prefix-pad-s",
-        "0.020",
+        "0.050",
         "--suffix-pad-s",
-        "0.010",
+        "0.020",
         "--clock-ppm",
-        "5.0",
+        "20.0",
+        "--cfo-hz",
+        "0.5",
+        "--drift-hz-s",
+        "0.001",
     ],
 }
 
@@ -90,10 +120,27 @@ PRESETS: dict[str, dict[str, Any]] = {
     },
     "publication": {
         "payloads": [32, 64, 128, 256],
-        "snrs": [45.0, 40.0, 35.0, 30.0, 25.0, 20.0, 15.0, 10.0, 5.0, 0.0,
-                 -5.0, -10.0, -15.0, -20.0, -25.0, -30.0, -35.0],
+        "snrs": [
+            45.0,
+            40.0,
+            35.0,
+            30.0,
+            25.0,
+            20.0,
+            15.0,
+            10.0,
+            5.0,
+            0.0,
+            -5.0,
+            -10.0,
+            -15.0,
+            -20.0,
+            -25.0,
+            -30.0,
+            -35.0,
+        ],
         "profiles": ["aligned_awgn", "sync_awgn", "cfo_drift", "tone", "clock"],
-        "trials_per_point": 200,
+        "trials_per_point": 50,
     },
 }
 
@@ -177,7 +224,9 @@ def first_json_object(stdout: str) -> dict[str, Any]:
     raise ValueError("No JSON object found in cdss simulate output")
 
 
-def run_trial(binary: Path, job: Job, timeout_s: float, omp_threads: int) -> dict[str, Any]:
+def run_trial(
+    binary: Path, job: Job, timeout_s: float, omp_threads: int
+) -> dict[str, Any]:
     args = [
         str(binary),
         "simulate",
@@ -192,7 +241,9 @@ def run_trial(binary: Path, job: Job, timeout_s: float, omp_threads: int) -> dic
     t0 = time.perf_counter()
     env = os.environ.copy()
     env["OMP_NUM_THREADS"] = str(max(1, omp_threads))
-    proc = subprocess.run(args, capture_output=True, text=True, timeout=timeout_s, env=env)
+    proc = subprocess.run(
+        args, capture_output=True, text=True, timeout=timeout_s, env=env
+    )
     elapsed_ms = (time.perf_counter() - t0) * 1000.0
 
     parsed: dict[str, Any] = {}
@@ -204,10 +255,18 @@ def run_trial(binary: Path, job: Job, timeout_s: float, omp_threads: int) -> dic
             parse_error = str(exc)
 
     crc_ok = bool(parsed.get("crc_ok", False)) if parsed else False
-    bit_errors = int(parsed.get("bit_errors", job.payload_bits)) if parsed else job.payload_bits
-    ber = float(parsed.get("ber", bit_errors / max(job.payload_bits, 1))) if parsed else 1.0
+    bit_errors = (
+        int(parsed.get("bit_errors", job.payload_bits)) if parsed else job.payload_bits
+    )
+    ber = (
+        float(parsed.get("ber", bit_errors / max(job.payload_bits, 1)))
+        if parsed
+        else 1.0
+    )
     payload_bit_count = int(parsed.get("payload_bit_count", 0)) if parsed else 0
-    sync_search = bool(parsed.get("sync_search", "--sync-search" in PROFILE_OPTIONS[job.profile]))
+    sync_search = bool(
+        parsed.get("sync_search", "--sync-search" in PROFILE_OPTIONS[job.profile])
+    )
     sync_ok = bool(parsed.get("sync_ok", False)) if sync_search else True
 
     return {
@@ -242,13 +301,18 @@ def run_trial(binary: Path, job: Job, timeout_s: float, omp_threads: int) -> dic
             "sync_ok": sync_ok,
             "expected_sample": parsed.get("expected_sample") if parsed else None,
             "detected_sample": parsed.get("detected_sample") if parsed else None,
-            "timing_error_samples": parsed.get("timing_error_samples") if parsed else None,
+            "timing_error_samples": parsed.get("timing_error_samples")
+            if parsed
+            else None,
             "acquisition_score": parsed.get("acquisition_score") if parsed else None,
+            "cfo_est_hz": parsed.get("cfo_est_hz") if parsed else None,
         },
         "decoder": {
             "decode_attempted": proc.returncode == 0 and bool(parsed),
             "crc_ok": crc_ok,
-            "refinement_iters_used": int(parsed.get("refinement_iters_used", 0)) if parsed else 0,
+            "refinement_iters_used": int(parsed.get("refinement_iters_used", 0))
+            if parsed
+            else 0,
             "payload_bit_count": payload_bit_count,
         },
         "payload": {
@@ -348,7 +412,9 @@ def summarize(records: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def group_records(records: list[dict[str, Any]], keys: tuple[str, ...]) -> dict[tuple[Any, ...], list[dict[str, Any]]]:
+def group_records(
+    records: list[dict[str, Any]], keys: tuple[str, ...]
+) -> dict[tuple[Any, ...], list[dict[str, Any]]]:
     grouped: dict[tuple[Any, ...], list[dict[str, Any]]] = {}
     for record in records:
         values = []
@@ -405,7 +471,12 @@ def snr_threshold(points: list[tuple[float, float]], target: float) -> float:
     return math.nan
 
 
-def write_markdown(path: Path, manifest: dict[str, Any], records: list[dict[str, Any]], summary_rows: list[dict[str, Any]]) -> None:
+def write_markdown(
+    path: Path,
+    manifest: dict[str, Any],
+    records: list[dict[str, Any]],
+    summary_rows: list[dict[str, Any]],
+) -> None:
     global_summary = summarize(records)
     profile_rows = []
     for (profile,), recs in sorted(group_records(records, ("profile",)).items()):
@@ -417,16 +488,20 @@ def write_markdown(path: Path, manifest: dict[str, Any], records: list[dict[str,
     grouped = group_records(records, ("profile", "payload_bits", "snr_db"))
     by_profile_payload: dict[tuple[str, int], list[tuple[float, float]]] = {}
     for (profile, payload_bits, snr_db), recs in grouped.items():
-        by_profile_payload.setdefault((profile, payload_bits), []).append((float(snr_db), summarize(recs)["crc_rate"]))
+        by_profile_payload.setdefault((profile, payload_bits), []).append(
+            (float(snr_db), summarize(recs)["crc_rate"])
+        )
     for (profile, payload_bits), points in sorted(by_profile_payload.items()):
-        threshold_rows.append({
-            "profile": profile,
-            "payload_bits": payload_bits,
-            "snr_at_50": snr_threshold(points, 0.50),
-            "snr_at_90": snr_threshold(points, 0.90),
-            "snr_at_95": snr_threshold(points, 0.95),
-            "snr_at_99": snr_threshold(points, 0.99),
-        })
+        threshold_rows.append(
+            {
+                "profile": profile,
+                "payload_bits": payload_bits,
+                "snr_at_50": snr_threshold(points, 0.50),
+                "snr_at_90": snr_threshold(points, 0.90),
+                "snr_at_95": snr_threshold(points, 0.95),
+                "snr_at_99": snr_threshold(points, 0.99),
+            }
+        )
 
     lines = [
         "# CDSS Simulate Monte Carlo Report",
@@ -458,53 +533,67 @@ def write_markdown(path: Path, manifest: dict[str, Any], records: list[dict[str,
         "|---|---:|---:|---:|---:|---:|---:|",
     ]
     for row in profile_rows:
-        sync_text = "n/a" if not finite(row["sync_rate"]) else fmt(row["sync_rate"] * 100.0, 2)
+        sync_text = (
+            "n/a" if not finite(row["sync_rate"]) else fmt(row["sync_rate"] * 100.0, 2)
+        )
         lines.append(
             f"| {row['profile']} | {row['frames']} | {fmt(row['crc_rate'] * 100.0, 2)} | "
             f"{fmt(row['fer'] * 100.0, 2)} | {fmt(row['ber_aggregate'], 8)} | "
             f"{sync_text} | {fmt(row['runtime_ms_mean'], 2)} |"
         )
 
-    lines.extend([
-        "",
-        "## CRC SNR Thresholds",
-        "",
-        "| Profile | Payload bits | 50% | 90% | 95% | 99% |",
-        "|---|---:|---:|---:|---:|---:|",
-    ])
+    lines.extend(
+        [
+            "",
+            "## CRC SNR Thresholds",
+            "",
+            "| Profile | Payload bits | 50% | 90% | 95% | 99% |",
+            "|---|---:|---:|---:|---:|---:|",
+        ]
+    )
     for row in threshold_rows:
         lines.append(
             f"| {row['profile']} | {row['payload_bits']} | {fmt(row['snr_at_50'], 2)} | "
             f"{fmt(row['snr_at_90'], 2)} | {fmt(row['snr_at_95'], 2)} | {fmt(row['snr_at_99'], 2)} |"
         )
 
-    lines.extend([
-        "",
-        "## Interpretation Boundaries",
-        "",
-        "- This campaign validates the public `cdss simulate` TX/channel/RX path.",
-        "- Profiles using `--sync-search` also validate preamble acquisition and phase alignment.",
-        "- Results are statistical evidence for the selected parameter grid, not a proof of universal robustness.",
-        "- For publication, keep `manifest.json`, `results.jsonl`, CSV summaries, source revision, compiler, and binary hash together.",
-        "",
-        "## Output Files",
-        "",
-        "- `manifest.json`: campaign configuration and environment.",
-        "- `results.jsonl`: one JSON object per simulated frame.",
-        "- `summary_by_profile_payload_snr.csv`: main numeric performance table.",
-        "- `summary_by_profile_payload.csv`: payload/profile aggregate table.",
-        "- `summary_by_profile.csv`: profile aggregate table.",
-        "- `failures.csv`: nonzero command exits or JSON parse failures.",
-    ])
+    lines.extend(
+        [
+            "",
+            "## Interpretation Boundaries",
+            "",
+            "- This campaign validates the public `cdss simulate` TX/channel/RX path.",
+            "- Profiles using `--sync-search` also validate preamble acquisition and phase alignment.",
+            "- Results are statistical evidence for the selected parameter grid, not a proof of universal robustness.",
+            "- For publication, keep `manifest.json`, `results.jsonl`, CSV summaries, source revision, compiler, and binary hash together.",
+            "",
+            "## Output Files",
+            "",
+            "- `manifest.json`: campaign configuration and environment.",
+            "- `results.jsonl`: one JSON object per simulated frame.",
+            "- `summary_by_profile_payload_snr.csv`: main numeric performance table.",
+            "- `summary_by_profile_payload.csv`: payload/profile aggregate table.",
+            "- `summary_by_profile.csv`: profile aggregate table.",
+            "- `failures.csv`: nonzero command exits or JSON parse failures.",
+        ]
+    )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def build_jobs(payloads: list[int], snrs: list[float], profiles: list[str], trials_per_point: int, seed_base: int) -> list[Job]:
+def build_jobs(
+    payloads: list[int],
+    snrs: list[float],
+    profiles: list[str],
+    trials_per_point: int,
+    seed_base: int,
+) -> list[Job]:
     jobs: list[Job] = []
     job_id = 0
     for profile in profiles:
         if profile not in PROFILE_OPTIONS:
-            raise ValueError(f"Unknown profile: {profile}; known profiles: {sorted(PROFILE_OPTIONS)}")
+            raise ValueError(
+                f"Unknown profile: {profile}; known profiles: {sorted(PROFILE_OPTIONS)}"
+            )
         for payload_bits in payloads:
             for snr_db in snrs:
                 for trial in range(trials_per_point):
@@ -515,32 +604,58 @@ def build_jobs(payloads: list[int], snrs: list[float], profiles: list[str], tria
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="CDSS Monte Carlo campaign using `cdss simulate`.")
+    parser = argparse.ArgumentParser(
+        description="CDSS Monte Carlo campaign using `cdss simulate`."
+    )
     parser.add_argument("--preset", choices=sorted(PRESETS), default="smoke")
     parser.add_argument("--binary", help="Path or command name for the cdss executable")
-    parser.add_argument("--out-dir", help="Output directory; default is timestamped under research/mc_results")
+    parser.add_argument(
+        "--out-dir",
+        help="Output directory; default is timestamped under research/mc_results",
+    )
     parser.add_argument("--payloads", help="Comma-separated payload sizes in bits")
     parser.add_argument("--snrs", help="Comma-separated SNR points in dB")
-    parser.add_argument("--profiles", help=f"Comma-separated profiles: {','.join(PROFILE_OPTIONS)}")
-    parser.add_argument("--trials-per-point", type=int, help="Trials per profile/payload/SNR point")
+    parser.add_argument(
+        "--profiles", help=f"Comma-separated profiles: {','.join(PROFILE_OPTIONS)}"
+    )
+    parser.add_argument(
+        "--trials-per-point", type=int, help="Trials per profile/payload/SNR point"
+    )
     parser.add_argument("--seed-base", type=int, default=20260512)
-    parser.add_argument("--workers", type=int, default=max(1, min(4, (os.cpu_count() or 2) // 2)))
-    parser.add_argument("--omp-threads", type=int, default=1, help="OpenMP threads per cdss simulate process")
+    parser.add_argument(
+        "--workers", type=int, default=max(1, min(4, (os.cpu_count() or 2) // 2))
+    )
+    parser.add_argument(
+        "--omp-threads",
+        type=int,
+        default=1,
+        help="OpenMP threads per cdss simulate process",
+    )
     parser.add_argument("--timeout-s", type=float, default=240.0)
     parser.add_argument("--fail-fast", action="store_true")
     args = parser.parse_args()
 
     preset = PRESETS[args.preset]
-    payloads = parse_int_list(args.payloads) if args.payloads else list(preset["payloads"])
+    payloads = (
+        parse_int_list(args.payloads) if args.payloads else list(preset["payloads"])
+    )
     snrs = parse_float_list(args.snrs) if args.snrs else list(preset["snrs"])
-    profiles = parse_str_list(args.profiles) if args.profiles else list(preset["profiles"])
-    trials_per_point = args.trials_per_point if args.trials_per_point is not None else int(preset["trials_per_point"])
+    profiles = (
+        parse_str_list(args.profiles) if args.profiles else list(preset["profiles"])
+    )
+    trials_per_point = (
+        args.trials_per_point
+        if args.trials_per_point is not None
+        else int(preset["trials_per_point"])
+    )
     if trials_per_point <= 0:
         raise ValueError("--trials-per-point must be positive")
 
     binary = resolve_binary(args.binary)
     timestamp = datetime.now().strftime("simulate_mc_%Y%m%d_%H%M%S")
-    out_dir = Path(args.out_dir).resolve() if args.out_dir else (DEFAULT_OUT_ROOT / timestamp)
+    out_dir = (
+        Path(args.out_dir).resolve() if args.out_dir else (DEFAULT_OUT_ROOT / timestamp)
+    )
     out_dir.mkdir(parents=True, exist_ok=True)
 
     jobs = build_jobs(payloads, snrs, profiles, trials_per_point, args.seed_base)
@@ -564,7 +679,9 @@ def main() -> int:
         "timeout_s": args.timeout_s,
         "total_jobs": len(jobs),
     }
-    (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
+    )
 
     results_path = out_dir / "results.jsonl"
     print(f"CDSS simulate Monte Carlo: {len(jobs)} frames")
@@ -577,7 +694,9 @@ def main() -> int:
     with results_path.open("w", encoding="utf-8") as f:
         with ThreadPoolExecutor(max_workers=max(1, args.workers)) as executor:
             future_map = {
-                executor.submit(run_trial, binary, job, args.timeout_s, args.omp_threads): job
+                executor.submit(
+                    run_trial, binary, job, args.timeout_s, args.omp_threads
+                ): job
                 for job in jobs
             }
             for future in as_completed(future_map):
@@ -599,25 +718,52 @@ def main() -> int:
                         },
                         "signal": {"payload_bits": job.payload_bits},
                         "channel": {"snr_db": job.snr_db},
-                        "acquisition": {"sync_search": "--sync-search" in PROFILE_OPTIONS[job.profile], "sync_ok": False},
-                        "decoder": {"decode_attempted": False, "crc_ok": False, "refinement_iters_used": 0, "payload_bit_count": 0},
-                        "payload": {"bit_errors": job.payload_bits, "total_bits": job.payload_bits, "ber": 1.0},
-                        "process": {"stdout": "", "stderr": str(exc), "parse_error": str(exc)},
+                        "acquisition": {
+                            "sync_search": "--sync-search"
+                            in PROFILE_OPTIONS[job.profile],
+                            "sync_ok": False,
+                        },
+                        "decoder": {
+                            "decode_attempted": False,
+                            "crc_ok": False,
+                            "refinement_iters_used": 0,
+                            "payload_bit_count": 0,
+                        },
+                        "payload": {
+                            "bit_errors": job.payload_bits,
+                            "total_bits": job.payload_bits,
+                            "ber": 1.0,
+                        },
+                        "process": {
+                            "stdout": "",
+                            "stderr": str(exc),
+                            "parse_error": str(exc),
+                        },
                     }
                 records.append(record)
                 f.write(json.dumps(record, sort_keys=True) + "\n")
                 f.flush()
                 completed += 1
-                if record["experiment"]["exit_code"] != 0 or record["process"].get("parse_error"):
+                if record["experiment"]["exit_code"] != 0 or record["process"].get(
+                    "parse_error"
+                ):
                     failures += 1
                     if args.fail_fast:
                         raise RuntimeError(f"Trial failed: job_id={job.job_id}")
-                if completed == len(jobs) or completed % max(1, min(25, len(jobs))) == 0:
+                if (
+                    completed == len(jobs)
+                    or completed % max(1, min(25, len(jobs))) == 0
+                ):
                     crc_count = sum(1 for r in records if r["decoder"]["crc_ok"])
-                    print(f"  completed {completed}/{len(jobs)}; crc_ok={crc_count}; failures={failures}", flush=True)
+                    print(
+                        f"  completed {completed}/{len(jobs)}; crc_ok={crc_count}; failures={failures}",
+                        flush=True,
+                    )
 
     summary_rows: list[dict[str, Any]] = []
-    for key, recs in sorted(group_records(records, ("profile", "payload_bits", "snr_db")).items()):
+    for key, recs in sorted(
+        group_records(records, ("profile", "payload_bits", "snr_db")).items()
+    ):
         profile, payload_bits, snr_db = key
         row = {"profile": profile, "payload_bits": payload_bits, "snr_db": snr_db}
         row.update(summarize(recs))
@@ -625,7 +771,9 @@ def main() -> int:
     write_csv(out_dir / "summary_by_profile_payload_snr.csv", summary_rows)
 
     payload_rows: list[dict[str, Any]] = []
-    for key, recs in sorted(group_records(records, ("profile", "payload_bits")).items()):
+    for key, recs in sorted(
+        group_records(records, ("profile", "payload_bits")).items()
+    ):
         profile, payload_bits = key
         row = {"profile": profile, "payload_bits": payload_bits}
         row.update(summarize(recs))
@@ -642,23 +790,44 @@ def main() -> int:
 
     failure_rows = []
     for record in records:
-        if record["experiment"]["exit_code"] != 0 or record["process"].get("parse_error"):
-            failure_rows.append({
-                "job_id": record["experiment"]["job_id"],
-                "profile": record["experiment"]["profile"],
-                "seed": record["experiment"]["seed"],
-                "payload_bits": record["signal"]["payload_bits"],
-                "snr_db": record["channel"].get("snr_db"),
-                "exit_code": record["experiment"]["exit_code"],
-                "parse_error": record["process"].get("parse_error", ""),
-                "stderr": record["process"].get("stderr", ""),
-            })
-    write_csv(out_dir / "failures.csv", failure_rows or [{"job_id": "", "profile": "", "seed": "", "payload_bits": "", "snr_db": "", "exit_code": "", "parse_error": "", "stderr": ""}])
+        if record["experiment"]["exit_code"] != 0 or record["process"].get(
+            "parse_error"
+        ):
+            failure_rows.append(
+                {
+                    "job_id": record["experiment"]["job_id"],
+                    "profile": record["experiment"]["profile"],
+                    "seed": record["experiment"]["seed"],
+                    "payload_bits": record["signal"]["payload_bits"],
+                    "snr_db": record["channel"].get("snr_db"),
+                    "exit_code": record["experiment"]["exit_code"],
+                    "parse_error": record["process"].get("parse_error", ""),
+                    "stderr": record["process"].get("stderr", ""),
+                }
+            )
+    write_csv(
+        out_dir / "failures.csv",
+        failure_rows
+        or [
+            {
+                "job_id": "",
+                "profile": "",
+                "seed": "",
+                "payload_bits": "",
+                "snr_db": "",
+                "exit_code": "",
+                "parse_error": "",
+                "stderr": "",
+            }
+        ],
+    )
 
     write_markdown(out_dir / "paper_summary.md", manifest, records, summary_rows)
     global_summary = summarize(records)
     print("Summary:")
-    print(f"  CRC success: {global_summary['crc_successes']}/{global_summary['frames']} ({global_summary['crc_rate'] * 100:.2f}%)")
+    print(
+        f"  CRC success: {global_summary['crc_successes']}/{global_summary['frames']} ({global_summary['crc_rate'] * 100:.2f}%)"
+    )
     print(f"  Aggregate BER: {global_summary['ber_aggregate']:.8f}")
     print(f"  Report: {out_dir / 'paper_summary.md'}")
     return 0 if failures == 0 else 1
