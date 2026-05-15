@@ -36,7 +36,7 @@ jobs:
 
       - name: Build
         env:
-          FPM_FFLAGS:  "-O3 -fopenmp -march=x86-64 -flto -I/usr/include"
+          FPM_FFLAGS:  "-Ofast -fopenmp -march=x86-64 -flto -fno-protect-parens -I/usr/include"
           FPM_LDFLAGS: "-fopenmp -flto -lfftw3 -lm"
         run: fpm build --profile release
 

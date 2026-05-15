@@ -28,7 +28,7 @@ NUM_CPUS := $(shell nproc)
 # exports flags so `fpm test` can find fftw3.f03 even when FPM is run through make.
 # The release-oriented flags favor executable throughput over strict IEEE debug
 # behavior; use `make debug` while investigating numerical issues.
-export FPM_FFLAGS  = -O3 -fopenmp -march=native -flto -I/usr/include
+export FPM_FFLAGS  = -Ofast -fopenmp -march=native -flto -fno-protect-parens -I/usr/include
 export FPM_LDFLAGS = -fopenmp -flto -lfftw3 -lm
 export OMP_NUM_THREADS = $(NUM_CPUS)
 

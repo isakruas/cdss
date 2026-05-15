@@ -32,7 +32,7 @@ jobs:
 
       - name: Build
         env:
-          FPM_FFLAGS:  "-O3 -fopenmp -march=x86-64 -flto -I/usr/include"
+          FPM_FFLAGS:  "-Ofast -fopenmp -march=x86-64 -flto -fno-protect-parens -I/usr/include"
           FPM_LDFLAGS: "-fopenmp -flto -lfftw3 -lm"
         run: fpm build --profile release
 
@@ -60,7 +60,8 @@ jobs:
         run: |
           apt-get update -qq
           apt-get install -y --no-install-recommends \
-            git ca-certificates make python3 python3-pip python3-venv
+            git ca-certificates make python3 python3-pip python3-venv \
+            libgfortran5 libfftw3-3 libgomp1
 
       - uses: actions/checkout@v4
 
