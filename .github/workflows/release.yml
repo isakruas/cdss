@@ -134,7 +134,7 @@ jobs:
           gpg --armor --export > dist/release-key.asc
           cd dist
           echo "$GPG_PASSPHRASE" | gpg \
-            --batch --yes --passphrase-fd 0 \
+            --batch --yes --passphrase-fd 0 --pinentry-mode loopback \
             --armor --detach-sign \
             --output SHA256SUMS.asc SHA256SUMS
           gpg --verify SHA256SUMS.asc SHA256SUMS
