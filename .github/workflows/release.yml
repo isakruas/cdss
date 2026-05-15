@@ -87,8 +87,8 @@ jobs:
             REPORT_VERSION="${{ github.ref_name }}" \
             REPORT_OUT="$(pwd)/cdss-${{ github.ref_name }}-release-report.pdf" \
             REPORT_TITLE="CDSS Release Validation Report" \
-            WORKERS=1 \
-            OMP_THREADS=1 \
+            WORKERS=2 \
+            OMP_THREADS=4 \
             SEED_BASE=6703739 \
             TIMEOUT_S=300
 
