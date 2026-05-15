@@ -87,6 +87,7 @@ run: venv
 	if [ -n "$(EXTRA_ARGS)" ]; then extra_args="$$extra_args $(EXTRA_ARGS)"; fi; \
 	mkdir -p "$(OUT_DIR)"; \
 	echo "[Research] Running Monte Carlo preset=$(PRESET) output=$(OUT_DIR)"; \
+	set +e; \
 	$(PY) scripts/cdss_monte_carlo.py \
 		--preset "$(PRESET)" \
 		--binary "$$bin" \
@@ -96,10 +97,21 @@ run: venv
 		--seed-base "$(SEED_BASE)" \
 		--timeout-s "$(TIMEOUT_S)" \
 		$$extra_args; \
-	printf '%s\n' "$(OUT_DIR)" > "$(LAST_RUN_FILE)"
+	run_rc=$$?; \
+	set -e; \
+	printf '%s\n' "$(OUT_DIR)" > "$(LAST_RUN_FILE)"; \
+	exit $$run_rc
 
 release: PRESET=release
-release: run report
+release: venv
+	@set -e; \
+	run_rc=0; \
+	$(MAKE) run PRESET="$(PRESET)" SKIP_BUILD="$(SKIP_BUILD)" BINARY="$(BINARY)" OUT_DIR="$(OUT_DIR)" WORKERS="$(WORKERS)" OMP_THREADS="$(OMP_THREADS)" SEED_BASE="$(SEED_BASE)" TIMEOUT_S="$(TIMEOUT_S)" EXTRA_ARGS="$(EXTRA_ARGS)" || run_rc=$$?; \
+	$(MAKE) report INPUT="$(OUT_DIR)/results.jsonl" REPORT_OUT="$(REPORT_OUT)" REPORT_VERSION="$(REPORT_VERSION)" REPORT_TITLE="$(REPORT_TITLE)"; \
+	if [ $$run_rc -ne 0 ]; then \
+		echo "[Research] release completed with campaign failures (run exit=$$run_rc). PDF was generated."; \
+		exit $$run_rc; \
+	fi
 
 report: venv
 	@set -e; \
