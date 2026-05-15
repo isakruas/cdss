@@ -87,7 +87,7 @@ jobs:
             REPORT_VERSION="${{ github.ref_name }}" \
             REPORT_OUT="$(pwd)/cdss-${{ github.ref_name }}-release-report.pdf" \
             REPORT_TITLE="CDSS Release Validation Report" \
-            WORKERS=4 \
+            WORKERS=1 \
             OMP_THREADS=1 \
             SEED_BASE=6703739 \
             TIMEOUT_S=300
@@ -172,19 +172,15 @@ jobs:
             CHIRP-DSSS-Polar digital modem with soft-decision reception and iterative refinement.
             Compiled from Debian Bookworm (gfortran, libfftw3).
 
-            ### Binary
+            ### Assets Overview
 
-            | File | Architecture |
-            |------|--------------|
-            | `cdss-${{ github.ref_name }}-linux-x86_64` | Linux x86-64 |
+            * **`cdss-${{ github.ref_name }}-linux-x86_64`**: The compiled x86-64 Linux executable.
+            * **`cdss-${{ github.ref_name }}-release-report.pdf`**: Monte Carlo validation report with BER/FER/CRC curves across all channel profiles (Aligned AWGN, Sync AWGN, CFO+Drift, Tone Interference, Clock Skew, Mixed Impairments).
+            * **`SHA256SUMS` / `SHA512SUMS`**: Cryptographic file checksums.
+            * **`SHA256SUMS.asc`**: Detached GPG signature for the SHA256 checksums.
+            * **`release-key.asc`**: The public GPG key required to verify the signature.
 
-            ### Validation report
-
-            `cdss-${{ github.ref_name }}-release-report.pdf` — validation report
-            BER/FER/CRC curves across all channel profiles (Aligned AWGN,
-            Sync AWGN, CFO+Drift, Tone Interference, Clock Skew, Mixed Impairments).
-
-            ### Integrity verification
+            ### Integrity Verification
 
             ```sh
             # Import the release public key (included in this release)
