@@ -154,13 +154,20 @@ def normalize_record(raw: dict[str, Any], row_number: int) -> dict[str, Any]:
         or raw.get("profile")
         or "legacy"
     )
-    payload_bits = to_int(signal.get("payload_bits", raw.get("payload_bits", payload.get("total_bits", -1))), -1)
+    payload_bits = to_int(
+        signal.get(
+            "payload_bits", raw.get("payload_bits", payload.get("total_bits", -1))
+        ),
+        -1,
+    )
     snr_db = to_float(channel.get("snr_db", raw.get("snr_db")))
     exit_code = to_int(experiment.get("exit_code", raw.get("exit_code", 0)), 0)
     parse_error = str(process.get("parse_error", raw.get("parse_error", "")) or "")
 
     bit_errors = to_float(payload.get("bit_errors", raw.get("bit_errors")))
-    total_bits = to_float(payload.get("total_bits", payload_bits if payload_bits > 0 else math.nan))
+    total_bits = to_float(
+        payload.get("total_bits", payload_bits if payload_bits > 0 else math.nan)
+    )
     ber = to_float(payload.get("ber", payload.get("ber_frame", raw.get("ber"))))
     if not finite(ber) and finite(bit_errors) and finite(total_bits) and total_bits > 0:
         ber = bit_errors / total_bits
@@ -169,7 +176,9 @@ def normalize_record(raw: dict[str, Any], row_number: int) -> dict[str, Any]:
 
     sync_search = to_bool(acquisition.get("sync_search"), False)
     frame_detected = to_bool(acquisition.get("frame_detected"), False)
-    sync_ok = to_bool(acquisition.get("sync_ok"), frame_detected if sync_search else True)
+    sync_ok = to_bool(
+        acquisition.get("sync_ok"), frame_detected if sync_search else True
+    )
 
     iterations = to_float(
         decoder.get(
@@ -195,7 +204,9 @@ def normalize_record(raw: dict[str, Any], row_number: int) -> dict[str, Any]:
         "command": command_text,
         "parse_error": parse_error,
         "stderr": str(process.get("stderr", raw.get("stderr", "")) or ""),
-        "runtime_ms": to_float(experiment.get("runtime_ms", performance.get("runtime_ms"))),
+        "runtime_ms": to_float(
+            experiment.get("runtime_ms", performance.get("runtime_ms"))
+        ),
         "sync_search": sync_search,
         "frame_detected": frame_detected,
         "sync_ok": sync_ok,
@@ -221,18 +232,20 @@ def load_records(path: Path) -> tuple[list[dict[str, Any]], list[dict[str, Any]]
             try:
                 raw = json.loads(text)
             except json.JSONDecodeError as exc:
-                parse_failures.append({
-                    "source": "input_jsonl",
-                    "row": row_number,
-                    "profile": "",
-                    "payload_bits": "",
-                    "snr_db": "",
-                    "trial": "",
-                    "seed": "",
-                    "exit_code": "",
-                    "parse_error": str(exc),
-                    "stderr": "",
-                })
+                parse_failures.append(
+                    {
+                        "source": "input_jsonl",
+                        "row": row_number,
+                        "profile": "",
+                        "payload_bits": "",
+                        "snr_db": "",
+                        "trial": "",
+                        "seed": "",
+                        "exit_code": "",
+                        "parse_error": str(exc),
+                        "stderr": "",
+                    }
+                )
                 continue
             records.append(normalize_record(raw, row_number))
     return records, parse_failures
@@ -243,7 +256,9 @@ def summarize(records: list[dict[str, Any]]) -> dict[str, Any]:
     if n == 0:
         return {field: math.nan for field in SUMMARY_FIELDS}
 
-    command_failures = sum(1 for r in records if r["exit_code"] != 0 or r["parse_error"])
+    command_failures = sum(
+        1 for r in records if r["exit_code"] != 0 or r["parse_error"]
+    )
     decode_attempts = sum(1 for r in records if r["decode_attempted"])
     crc_successes = sum(1 for r in records if r["crc_ok"])
     crc_lo, crc_hi = wilson_interval(crc_successes, n)
@@ -257,8 +272,14 @@ def summarize(records: list[dict[str, Any]]) -> dict[str, Any]:
     ber_frames = [r["ber"] for r in records if finite(r["ber"])]
     sync_records = [r for r in records if r["sync_search"]]
     sync_successes = sum(1 for r in sync_records if r["sync_ok"])
-    timing_abs = [abs(r["timing_error_samples"]) for r in sync_records if finite(r["timing_error_samples"])]
-    acquisition_scores = [r["acquisition_score"] for r in sync_records if finite(r["acquisition_score"])]
+    timing_abs = [
+        abs(r["timing_error_samples"])
+        for r in sync_records
+        if finite(r["timing_error_samples"])
+    ]
+    acquisition_scores = [
+        r["acquisition_score"] for r in sync_records if finite(r["acquisition_score"])
+    ]
     runtimes = [r["runtime_ms"] for r in records if finite(r["runtime_ms"])]
     iterations = [r["iterations_used"] for r in records if finite(r["iterations_used"])]
 
@@ -296,7 +317,9 @@ def summarize(records: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def group_records(records: list[dict[str, Any]], keys: tuple[str, ...]) -> dict[tuple[Any, ...], list[dict[str, Any]]]:
+def group_records(
+    records: list[dict[str, Any]], keys: tuple[str, ...]
+) -> dict[tuple[Any, ...], list[dict[str, Any]]]:
     grouped: dict[tuple[Any, ...], list[dict[str, Any]]] = defaultdict(list)
     for record in records:
         values: list[Any] = []
@@ -320,7 +343,9 @@ def write_csv(path: Path, rows: list[dict[str, Any]], fieldnames: list[str]) -> 
 
 
 def snr_threshold(points: list[tuple[float, float]], target: float) -> float:
-    valid_points = sorted((float(s), float(r)) for s, r in points if finite(s) and finite(r))
+    valid_points = sorted(
+        (float(s), float(r)) for s, r in points if finite(s) and finite(r)
+    )
     if not valid_points:
         return math.nan
     if all(rate >= target for _, rate in valid_points):
@@ -349,7 +374,9 @@ def load_manifest(input_path: Path, explicit_path: Path | None) -> dict[str, Any
     return {}
 
 
-def build_summary_rows(records: list[dict[str, Any]], keys: tuple[str, ...]) -> list[dict[str, Any]]:
+def build_summary_rows(
+    records: list[dict[str, Any]], keys: tuple[str, ...]
+) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for key_values, group in sorted(group_records(records, keys).items()):
         row = {key: value for key, value in zip(keys, key_values)}
@@ -358,7 +385,9 @@ def build_summary_rows(records: list[dict[str, Any]], keys: tuple[str, ...]) -> 
     return rows
 
 
-def build_threshold_rows(rows_by_profile_payload_snr: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def build_threshold_rows(
+    rows_by_profile_payload_snr: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     grouped: dict[tuple[str, int], list[tuple[float, float]]] = defaultdict(list)
     for row in rows_by_profile_payload_snr:
         grouped[(str(row["profile"]), int(row["payload_bits"]))].append(
@@ -367,34 +396,40 @@ def build_threshold_rows(rows_by_profile_payload_snr: list[dict[str, Any]]) -> l
 
     rows: list[dict[str, Any]] = []
     for (profile, payload_bits), points in sorted(grouped.items()):
-        rows.append({
-            "profile": profile,
-            "payload_bits": payload_bits,
-            "snr_at_50": snr_threshold(points, 0.50),
-            "snr_at_90": snr_threshold(points, 0.90),
-            "snr_at_95": snr_threshold(points, 0.95),
-            "snr_at_99": snr_threshold(points, 0.99),
-        })
+        rows.append(
+            {
+                "profile": profile,
+                "payload_bits": payload_bits,
+                "snr_at_50": snr_threshold(points, 0.50),
+                "snr_at_90": snr_threshold(points, 0.90),
+                "snr_at_95": snr_threshold(points, 0.95),
+                "snr_at_99": snr_threshold(points, 0.99),
+            }
+        )
     return rows
 
 
-def build_failure_rows(records: list[dict[str, Any]], parse_failures: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def build_failure_rows(
+    records: list[dict[str, Any]], parse_failures: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
     rows = list(parse_failures)
     for record in records:
         if record["exit_code"] == 0 and not record["parse_error"]:
             continue
-        rows.append({
-            "source": "trial",
-            "row": record["row"],
-            "profile": record["profile"],
-            "payload_bits": record["payload_bits"],
-            "snr_db": record["snr_db"],
-            "trial": record["trial"],
-            "seed": record["seed"],
-            "exit_code": record["exit_code"],
-            "parse_error": record["parse_error"],
-            "stderr": record["stderr"],
-        })
+        rows.append(
+            {
+                "source": "trial",
+                "row": record["row"],
+                "profile": record["profile"],
+                "payload_bits": record["payload_bits"],
+                "snr_db": record["snr_db"],
+                "trial": record["trial"],
+                "seed": record["seed"],
+                "exit_code": record["exit_code"],
+                "parse_error": record["parse_error"],
+                "stderr": record["stderr"],
+            }
+        )
     return rows
 
 
@@ -410,7 +445,9 @@ def write_report(
 ) -> None:
     global_summary = summarize(records)
     profiles = sorted({str(r["profile"]) for r in records})
-    payloads = sorted({int(r["payload_bits"]) for r in records if r["payload_bits"] >= 0})
+    payloads = sorted(
+        {int(r["payload_bits"]) for r in records if r["payload_bits"] >= 0}
+    )
     snrs = sorted({float(r["snr_db"]) for r in records if finite(r["snr_db"])})
 
     lines = [
@@ -444,58 +481,73 @@ def write_report(
         "|---|---:|---:|---:|---:|---:|---:|",
     ]
     for row in by_profile_rows:
-        sync_text = "n/a" if not finite(row["sync_rate"]) else fmt(row["sync_rate"] * 100.0, 2)
+        sync_text = (
+            "n/a" if not finite(row["sync_rate"]) else fmt(row["sync_rate"] * 100.0, 2)
+        )
         lines.append(
             f"| {row['profile']} | {row['frames']} | {fmt(row['crc_rate'] * 100.0, 2)} | "
             f"{fmt(row['fer'] * 100.0, 2)} | {fmt(row['ber_aggregate'], 8)} | "
             f"{sync_text} | {fmt(row['runtime_ms_mean'], 2)} |"
         )
 
-    lines.extend([
-        "",
-        "## CRC SNR Thresholds",
-        "",
-        "| Profile | Payload bits | 50% | 90% | 95% | 99% |",
-        "|---|---:|---:|---:|---:|---:|",
-    ])
+    lines.extend(
+        [
+            "",
+            "## CRC SNR Thresholds",
+            "",
+            "| Profile | Payload bits | 50% | 90% | 95% | 99% |",
+            "|---|---:|---:|---:|---:|---:|",
+        ]
+    )
     for row in threshold_rows:
         lines.append(
             f"| {row['profile']} | {row['payload_bits']} | {fmt(row['snr_at_50'], 2)} | "
             f"{fmt(row['snr_at_90'], 2)} | {fmt(row['snr_at_95'], 2)} | {fmt(row['snr_at_99'], 2)} |"
         )
 
-    lines.extend([
-        "",
-        "## Figures",
-        "",
-    ])
+    lines.extend(
+        [
+            "",
+            "## Figures",
+            "",
+        ]
+    )
     if figure_files:
         for figure in figure_files:
             lines.append(f"- `{figure}`")
     else:
-        lines.append("- No figures were generated because matplotlib was unavailable or the dataset was empty.")
+        lines.append(
+            "- No figures were generated because matplotlib was unavailable or the dataset was empty."
+        )
 
-    lines.extend([
-        "",
-        "## Interpretation Boundaries",
-        "",
-        "- These plots and tables summarize the measured `cdss simulate` campaign only.",
-        "- The CSV tables are the authoritative numeric artifacts; PNG files are derived visualizations.",
-        "- Profiles using synchronized acquisition exercise preamble search and phase alignment before decoding.",
-        "- SNR thresholds are linear interpolations over measured SNR points; single-point smoke campaigns are not threshold measurements.",
-        "- Scientific claims should be restricted to the measured payload, SNR, profile, and seed grid unless additional campaigns are run.",
-    ])
+    lines.extend(
+        [
+            "",
+            "## Interpretation Boundaries",
+            "",
+            "- These plots and tables summarize the measured `cdss simulate` campaign only.",
+            "- The CSV tables are the authoritative numeric artifacts; PNG files are derived visualizations.",
+            "- Profiles using synchronized acquisition exercise preamble search and phase alignment before decoding.",
+            "- SNR thresholds are linear interpolations over measured SNR points; single-point smoke campaigns are not threshold measurements.",
+            "- Scientific claims should be restricted to the measured payload, SNR, profile, and seed grid unless additional campaigns are run.",
+        ]
+    )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def import_matplotlib():
     try:
         import matplotlib
+
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
+
         return plt
     except Exception as exc:  # noqa: BLE001 - reported to caller as optional plotting failure.
-        print(f"Warning: matplotlib unavailable, skipping PNG figures: {exc}", file=sys.stderr)
+        print(
+            f"Warning: matplotlib unavailable, skipping PNG figures: {exc}",
+            file=sys.stderr,
+        )
         return None
 
 
@@ -527,7 +579,9 @@ def plot_metric_by_group(
         if y_floor is not None:
             ys = [max(y, y_floor) for y in ys]
         if semilogy:
-            plt.semilogy(xs, ys, marker="o", linewidth=1.5, markersize=4, label=str(group))
+            plt.semilogy(
+                xs, ys, marker="o", linewidth=1.5, markersize=4, label=str(group)
+            )
         else:
             plt.plot(xs, ys, marker="o", linewidth=1.5, markersize=4, label=str(group))
     plt.title(title)
@@ -557,8 +611,18 @@ def plot_runtime(plt: Any, rows: list[dict[str, Any]], out_path: Path) -> bool:
         xs = [float(row["snr_db"]) for row in points]
         p50 = [float(row["runtime_ms_p50"]) for row in points]
         p95 = [float(row["runtime_ms_p95"]) for row in points]
-        plt.plot(xs, p50, marker="o", linewidth=1.5, markersize=4, label=f"{profile} p50")
-        plt.plot(xs, p95, marker="s", linewidth=1.1, markersize=3, linestyle="--", label=f"{profile} p95")
+        plt.plot(
+            xs, p50, marker="o", linewidth=1.5, markersize=4, label=f"{profile} p50"
+        )
+        plt.plot(
+            xs,
+            p95,
+            marker="s",
+            linewidth=1.1,
+            markersize=3,
+            linestyle="--",
+            label=f"{profile} p95",
+        )
     plt.title("Runtime vs SNR by Profile")
     plt.xlabel("SNR (dB)")
     plt.ylabel("Runtime (ms)")
@@ -603,17 +667,35 @@ def plot_heatmaps(plt: Any, rows: list[dict[str, Any]], out_dir: Path) -> list[s
             for row in profile_rows
         }
         heatmap_specs = [
-            ("crc_rate", "CRC Success (%)", 100.0, None, f"heatmap_crc_success_{slug(profile)}.png"),
-            ("ber_aggregate", "log10 Aggregate BER", 1.0, "log10", f"heatmap_log10_ber_{slug(profile)}.png"),
+            (
+                "crc_rate",
+                "CRC Success (%)",
+                100.0,
+                None,
+                f"heatmap_crc_success_{slug(profile)}.png",
+            ),
+            (
+                "ber_aggregate",
+                "log10 Aggregate BER",
+                1.0,
+                "log10",
+                f"heatmap_log10_ber_{slug(profile)}.png",
+            ),
         ]
         for metric_key, color_label, scale, transform, filename in heatmap_specs:
             matrix: list[list[float]] = []
             for payload_bits in payloads:
                 row_values = []
                 for snr_db in snrs:
-                    value = index.get((payload_bits, snr_db), {}).get(metric_key, math.nan)
+                    value = index.get((payload_bits, snr_db), {}).get(
+                        metric_key, math.nan
+                    )
                     if transform == "log10":
-                        value = math.log10(max(float(value), 1e-12)) if finite(value) else math.nan
+                        value = (
+                            math.log10(max(float(value), 1e-12))
+                            if finite(value)
+                            else math.nan
+                        )
                     elif finite(value):
                         value = float(value) * scale
                     row_values.append(value)
@@ -718,7 +800,18 @@ def generate_figures(
             None,
         ),
     ]
-    for rows, filename, group_key, metric_key, title, ylabel, scale, semilogy, y_floor, ylim in specs:
+    for (
+        rows,
+        filename,
+        group_key,
+        metric_key,
+        title,
+        ylabel,
+        scale,
+        semilogy,
+        y_floor,
+        ylim,
+    ) in specs:
         if plot_metric_by_group(
             plt,
             rows,
@@ -734,12 +827,16 @@ def generate_figures(
         ):
             figures.append(filename)
 
-    if plot_runtime(plt, by_profile_snr_rows, out_dir / "runtime_ms_vs_snr_by_profile.png"):
+    if plot_runtime(
+        plt, by_profile_snr_rows, out_dir / "runtime_ms_vs_snr_by_profile.png"
+    ):
         figures.append("runtime_ms_vs_snr_by_profile.png")
 
     profiles = sorted({str(row["profile"]) for row in by_profile_payload_snr_rows})
     for profile in profiles:
-        rows = [row for row in by_profile_payload_snr_rows if str(row["profile"]) == profile]
+        rows = [
+            row for row in by_profile_payload_snr_rows if str(row["profile"]) == profile
+        ]
         crc_file = f"crc_success_vs_snr_{slug(profile)}_by_payload.png"
         if plot_metric_by_group(
             plt,
@@ -790,17 +887,33 @@ def default_input_path() -> Path:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Analyze and plot CDSS Monte Carlo JSONL results.")
-    parser.add_argument("--input", help="Input results.jsonl file. Defaults to research/.last_run when available.")
-    parser.add_argument("--out-dir", help="Output directory. Defaults to <input directory>/analysis.")
-    parser.add_argument("--manifest", help="Optional manifest.json path. Defaults to <input directory>/manifest.json.")
+    parser = argparse.ArgumentParser(
+        description="Analyze and plot CDSS Monte Carlo JSONL results."
+    )
+    parser.add_argument(
+        "--input",
+        help="Input results.jsonl file. Defaults to research/.last_run when available.",
+    )
+    parser.add_argument(
+        "--out-dir", help="Output directory. Defaults to <input directory>/analysis."
+    )
+    parser.add_argument(
+        "--manifest",
+        help="Optional manifest.json path. Defaults to <input directory>/manifest.json.",
+    )
     args = parser.parse_args()
 
-    input_path = Path(args.input).resolve() if args.input else default_input_path().resolve()
+    input_path = (
+        Path(args.input).resolve() if args.input else default_input_path().resolve()
+    )
     if not input_path.exists():
         raise FileNotFoundError(f"Input JSONL file not found: {input_path}")
 
-    out_dir = Path(args.out_dir).resolve() if args.out_dir else (input_path.parent / "analysis").resolve()
+    out_dir = (
+        Path(args.out_dir).resolve()
+        if args.out_dir
+        else (input_path.parent / "analysis").resolve()
+    )
     out_dir.mkdir(parents=True, exist_ok=True)
 
     manifest_path = Path(args.manifest).resolve() if args.manifest else None
@@ -811,14 +924,20 @@ def main() -> int:
 
     global_row = {"scope": "all", "input_parse_failures": len(parse_failures)}
     global_row.update(summarize(records))
-    by_profile_payload_snr_rows = build_summary_rows(records, ("profile", "payload_bits", "snr_db"))
+    by_profile_payload_snr_rows = build_summary_rows(
+        records, ("profile", "payload_bits", "snr_db")
+    )
     by_profile_payload_rows = build_summary_rows(records, ("profile", "payload_bits"))
     by_profile_snr_rows = build_summary_rows(records, ("profile", "snr_db"))
     by_profile_rows = build_summary_rows(records, ("profile",))
     threshold_rows = build_threshold_rows(by_profile_payload_snr_rows)
     failure_rows = build_failure_rows(records, parse_failures)
 
-    write_csv(out_dir / "global_summary.csv", [global_row], ["scope", "input_parse_failures", *SUMMARY_FIELDS])
+    write_csv(
+        out_dir / "global_summary.csv",
+        [global_row],
+        ["scope", "input_parse_failures", *SUMMARY_FIELDS],
+    )
     write_csv(
         out_dir / "summary_by_profile_payload_snr.csv",
         by_profile_payload_snr_rows,
@@ -847,10 +966,23 @@ def main() -> int:
     write_csv(
         out_dir / "failures.csv",
         failure_rows,
-        ["source", "row", "profile", "payload_bits", "snr_db", "trial", "seed", "exit_code", "parse_error", "stderr"],
+        [
+            "source",
+            "row",
+            "profile",
+            "payload_bits",
+            "snr_db",
+            "trial",
+            "seed",
+            "exit_code",
+            "parse_error",
+            "stderr",
+        ],
     )
 
-    figure_files = generate_figures(out_dir, by_profile_snr_rows, by_profile_payload_snr_rows, threshold_rows)
+    figure_files = generate_figures(
+        out_dir, by_profile_snr_rows, by_profile_payload_snr_rows, threshold_rows
+    )
     write_report(
         out_dir / "analysis_summary.md",
         manifest,

@@ -103,34 +103,29 @@ PROFILE_OPTIONS: dict[str, list[str]] = {
         "--drift-hz-s",
         "0.001",
     ],
+    "mixed": [
+        "--sync-search",
+        "--prefix-pad-s",
+        "0.080",
+        "--suffix-pad-s",
+        "0.050",
+        "--clock-ppm",
+        "5.0",
+        "--cfo-hz",
+        "1.5",
+        "--drift-hz-s",
+        "0.003",
+        "--tone-frequency-hz",
+        "1525.0",
+        "--tone-sir-db",
+        "18.0",
+    ],
 }
 
 PRESETS: dict[str, dict[str, Any]] = {
-    "smoke": {
-        "payloads": [16],
-        "snrs": [45.0],
-        "profiles": ["aligned_awgn", "sync_awgn"],
-        "trials_per_point": 2,
-    },
-    "quick": {
-        "payloads": [16, 64],
-        "snrs": [45.0, 35.0, 25.0],
-        "profiles": ["aligned_awgn", "sync_awgn", "cfo_drift", "tone", "clock"],
-        "trials_per_point": 10,
-    },
-    "publication": {
-        "payloads": [32, 64, 128, 256],
+    "release": {
+        "payloads": [32, 64, 128],
         "snrs": [
-            45.0,
-            40.0,
-            35.0,
-            30.0,
-            25.0,
-            20.0,
-            15.0,
-            10.0,
-            5.0,
-            0.0,
             -5.0,
             -10.0,
             -15.0,
@@ -139,8 +134,15 @@ PRESETS: dict[str, dict[str, Any]] = {
             -30.0,
             -35.0,
         ],
-        "profiles": ["aligned_awgn", "sync_awgn", "cfo_drift", "tone", "clock"],
-        "trials_per_point": 50,
+        "profiles": [
+            "aligned_awgn",
+            "sync_awgn",
+            "cfo_drift",
+            "tone",
+            "clock",
+            "mixed",
+        ],
+        "trials_per_point": 10,
     },
 }
 
@@ -607,7 +609,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="CDSS Monte Carlo campaign using `cdss simulate`."
     )
-    parser.add_argument("--preset", choices=sorted(PRESETS), default="smoke")
+    parser.add_argument("--preset", choices=sorted(PRESETS), default="release")
     parser.add_argument("--binary", help="Path or command name for the cdss executable")
     parser.add_argument(
         "--out-dir",

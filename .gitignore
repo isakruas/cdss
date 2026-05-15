@@ -63,7 +63,17 @@ vcpkg_installed/
 
 # debug information files
 *.dwo
+*.sh
+cdss-*
 
 # test output & cache
 Testing/
 .cache/
+.ruff_cache
+campaign
+
+# Local secrets (never commit this file)
+.secrets
+
+# act binary
+act
